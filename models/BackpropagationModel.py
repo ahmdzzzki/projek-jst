@@ -17,9 +17,13 @@ class BackpropagationModel(BaseEstimator, ClassifierMixin):
         self.classes_ = None
 
     def _initialize_weights(self):
+        # Initialize weights including bias for each layer
         np.random.seed(1)
-        self.w = [np.random.rand(self.layer_conf[i] + 1, self.layer_conf[i+1]) * 0.1 
-                  for i in range(len(self.layer_conf) - 1)]
+        self.w = [
+            np.random.rand(self.layer_conf[i] + 1, self.layer_conf[i + 1]) * 0.1  # +1 for bias
+            for i in range(len(self.layer_conf) - 1)
+        ]
+
 
     @staticmethod
     def sig(X):
@@ -56,25 +60,24 @@ class BackpropagationModel(BaseEstimator, ClassifierMixin):
             mse = 0
 
             for r in range(len(X)):
+                # **Inisialisasi n**
+                n = [X[r]]  # Mulai dengan input layer (termasuk bias)
+
                 # Forward pass
-                n = [X[r]]
                 for L in range(len(self.w)):
-                    activation = np.dot(n[L], self.w[L])
-                    layer_output = (self.sig(activation) if L < len(self.w) - 1 
-                                    else (self.sig(activation) if is_binary else self._softmax(activation)))
-                    n.append(np.append(layer_output, 1) if L < len(self.w) - 1 else layer_output)
+                    activation = np.dot(n[L], self.w[L])  # Weighted sum
+                    if L < len(self.w) - 1:  # Hidden layers
+                        layer_output = self.sig(activation)
+                        n.append(np.append(layer_output, 1))  # Tambahkan bias
+                    else:  # Output layer
+                        n.append(self.sig(activation) if is_binary else self._softmax(activation))
 
                 # Calculate error and MSE
                 e = y[r] - n[-1]
                 mse += np.sum(e ** 2)
 
-                # Determine delta based on classification type
-                if is_binary:
-                    d = e * self.sigd(np.dot(n[-2], self.w[-1]))
-                else:
-                    d = e
-
                 # Backward pass with weight updates
+                d = e * (self.sigd(np.dot(n[-2], self.w[-1])) if is_binary else e)
                 for L in range(len(self.w) - 1, -1, -1):
                     dw = self.learn_rate * np.outer(n[L], d)
                     self.w[L] += dw
@@ -87,6 +90,7 @@ class BackpropagationModel(BaseEstimator, ClassifierMixin):
 
         self.epoch = epoch
         self.mse = mse
+
 
     def bp_predict(self, X):
         X = np.hstack([X, np.ones((X.shape[0], 1))])  # Add bias term to input
@@ -128,3 +132,4 @@ class BackpropagationModel(BaseEstimator, ClassifierMixin):
         for param, value in params.items():
             setattr(self, param, value)
         return self
+    
