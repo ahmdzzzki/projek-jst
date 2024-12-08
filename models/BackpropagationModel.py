@@ -10,11 +10,12 @@ class BackpropagationModel(BaseEstimator, ClassifierMixin):
         self.max_epoch = max_epoch
         self.max_error = max_error
         self.learn_rate = learn_rate
-        self.print_per_epoch = print_per_epoch
+        self.print_per_epoch = print_per_epoch if print_per_epoch > 0 else 100 
         self.w = None
         self.epoch = 0
         self.mse = 1
         self.classes_ = None
+        self.mse_history = []
 
     def _initialize_weights(self):
         # Initialize weights including bias for each layer
@@ -23,7 +24,6 @@ class BackpropagationModel(BaseEstimator, ClassifierMixin):
             np.random.rand(self.layer_conf[i] + 1, self.layer_conf[i + 1]) * 0.1  # +1 for bias
             for i in range(len(self.layer_conf) - 1)
         ]
-
 
     @staticmethod
     def sig(X):
@@ -38,15 +38,15 @@ class BackpropagationModel(BaseEstimator, ClassifierMixin):
         return softmax(x, axis=0)
 
     def bp_fit(self, X, target):
-        # Tambahkan bias term ke input
+        # Add bias term to input
         X = np.hstack([X, np.ones((X.shape[0], 1))])
         self.classes_ = np.unique(target)
         is_binary = len(self.classes_) == 2  # Determine binary vs. multi-class
 
-        # Konversi target ke NumPy array jika itu Series
+        # Convert target to NumPy array if it is a Series
         target = np.array(target) if isinstance(target, pd.Series) else target
 
-        # One-hot encoding untuk multi-class, tambahkan axis untuk binary
+        # One-hot encoding for multi-class, add axis for binary
         if not is_binary:
             y = np.eye(len(self.classes_))[target]
         else:
@@ -60,15 +60,15 @@ class BackpropagationModel(BaseEstimator, ClassifierMixin):
             mse = 0
 
             for r in range(len(X)):
-                # **Inisialisasi n**
-                n = [X[r]]  # Mulai dengan input layer (termasuk bias)
+                # **Initialize n**
+                n = [X[r]]  # Start with the input layer (including bias)
 
                 # Forward pass
                 for L in range(len(self.w)):
                     activation = np.dot(n[L], self.w[L])  # Weighted sum
                     if L < len(self.w) - 1:  # Hidden layers
                         layer_output = self.sig(activation)
-                        n.append(np.append(layer_output, 1))  # Tambahkan bias
+                        n.append(np.append(layer_output, 1))  # Add bias
                     else:  # Output layer
                         n.append(self.sig(activation) if is_binary else self._softmax(activation))
 
@@ -85,14 +85,37 @@ class BackpropagationModel(BaseEstimator, ClassifierMixin):
                         d = np.dot(d, self.w[L][:-1].T) * self.sigd(np.dot(n[L-1], self.w[L-1]))
 
             mse /= len(X)
-            if self.print_per_epoch > -1 and epoch % self.print_per_epoch == 0:
+
+            # Append the MSE for this epoch
+            self.mse_history.append(mse)
+
+            # Avoid division by zero by checking print_per_epoch > 0
+            if self.print_per_epoch > 0 and epoch % self.print_per_epoch == 0:
                 print(f"Epoch {epoch}, MSE: {mse:.6f}")
 
         self.epoch = epoch
         self.mse = mse
 
-
     def bp_predict(self, X):
+        X = np.hstack([X, np.ones((X.shape[0], 1))])  # Add bias term to input
+        predictions = []
+
+        for x in X:
+            n = x
+            for layer_weights in self.w:
+                activation = np.dot(n, layer_weights)
+                n = (self.sig(activation) if layer_weights is not self.w[-1] 
+                        else (self.sig(activation) if len(self.classes_) == 2 else self._softmax(activation)))
+                n = np.append(n, 1) if layer_weights is not self.w[-1] else n
+            predictions.append(n)
+
+            return np.array(predictions)
+
+    def fit(self, X, y):
+        self.bp_fit(X, y)
+        return self
+
+    def predict(self, X):
         X = np.hstack([X, np.ones((X.shape[0], 1))])  # Add bias term to input
         predictions = []
 
@@ -106,14 +129,6 @@ class BackpropagationModel(BaseEstimator, ClassifierMixin):
             predictions.append(n)
 
         return np.array(predictions)
-
-    def fit(self, X, y):
-        self.bp_fit(X, y)
-        return self
-
-    def predict(self, X):
-        predictions = self.bp_predict(X)
-        return (predictions > 0.5).astype(int) if len(self.classes_) == 2 else np.argmax(predictions, axis=1)
 
     def score(self, X, y):
         predictions = self.predict(X)
@@ -132,4 +147,3 @@ class BackpropagationModel(BaseEstimator, ClassifierMixin):
         for param, value in params.items():
             setattr(self, param, value)
         return self
-    
